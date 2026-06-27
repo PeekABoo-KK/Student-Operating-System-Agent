@@ -218,7 +218,7 @@ def write_output(data):
         "total_records": len(data)
     }
 
-    with open("mcp_server/data/dataset_stats.json", "w", encoding="utf-8") as f:
+    with open("mcp_server/data/scholarships.json", "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2)
 
 
