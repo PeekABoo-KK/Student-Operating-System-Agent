@@ -1,3 +1,0 @@
-from .student_profile import StudentProfile
-from .activity_log import ActivityLog
-from .alert import Alert
