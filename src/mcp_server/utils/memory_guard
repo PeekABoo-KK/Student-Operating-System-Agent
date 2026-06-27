@@ -1,0 +1,32 @@
+import json
+import os
+from typing import Dict, Any
+
+MEMORY_PATH = "mcp_server/data/memory.json"
+
+class MemoryGuard:
+
+    def __init__(self):
+        self.memory = self._load_memory()
+
+    def _load_memory(self):
+        if not os.path.exists(MEMORY_PATH):
+            return {"student_profile": {}, "history": []}
+
+        with open(MEMORY_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def get_profile(self) -> Dict[str, Any]:
+        return self.memory.get("student_profile", {})
+
+    def update_profile(self, updates: Dict[str, Any]):
+        self.memory["student_profile"].update(updates)
+        self._save()
+
+    def log_event(self, event: Dict[str, Any]):
+        self.memory["history"].append(event)
+        self._save()
+
+    def _save(self):
+        with open(MEMORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(self.memory, f, indent=2)
