@@ -1,85 +1,74 @@
 import json
-from pathlib import Path
-from typing import List
-from validators import validate_scholarship
+from fastapi import FastAPI
+from utils.memory_guard import MemoryGuard
+from utils.io_validator import IOValidator
+from validators.scholarship_validator import ScholarshipValidator
 
-DATA_PATH = Path(__file__).parent / "data" / "scholarships.json"
+app = FastAPI()
 
+memory = MemoryGuard()
 
-class ScholarshipMCPServer:
-    def __init__(self):
-        self.data = self._load_data()
+# LOAD DATASET
+with open("mcp_server/data/scholarships.json", "r", encoding="utf-8") as f:
+    RAW_DATA = json.load(f)
 
-    def _load_data(self):
-        with open(DATA_PATH, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-
-        valid = []
-        for r in raw:
-            ok, reason = validate_scholarship(r)
-            if ok:
-                valid.append(r)
-            else:
-                print(f"[REJECTED] {r.get('scholarship_id')} -> {reason}")
-
-        print(f"[MCP SERVER] Loaded {len(valid)} valid scholarships")
-        return valid
-
-    # -------------------------
-    # MCP TOOL: search
-    # -------------------------
-    def search_scholarships(self, query: dict):
-        """
-        query:
-        {
-          "gpa": float,
-          "major": str,
-          "year": str
-        }
-        """
-
-        gpa = query.get("gpa", 0)
-        major = query.get("major", "")
-        year = query.get("year", "")
-
-        results = []
-
-        for s in self.data:
-
-            # HARD FILTERS
-            if gpa < s["minimum_gpa"]:
-                continue
-
-            if year and year not in s["eligible_years"]:
-                continue
-
-            if major and major not in s["eligible_majors"]:
-                continue
-
-            # SOFT SCORE (simple MVP scoring)
-            score = 0.0
-
-            # GPA score
-            score += 0.3 if gpa >= s["minimum_gpa"] else 0
-
-            # Major match
-            score += 0.25 if major in s["eligible_majors"] else 0
-
-            # Year match
-            score += 0.15 if year in s["eligible_years"] else 0
-
-            # Category boost
-            if s["category"] == "stem" and major in ["Computer Science", "Data Science"]:
-                score += 0.2
-
-            results.append({
-                "scholarship": s,
-                "score": round(score, 3)
-            })
-
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:10]
+DATASET = ScholarshipValidator.validate_dataset(RAW_DATA)
 
 
-# singleton
-server = ScholarshipMCPServer()
+# =========================
+# MCP TOOL: SEARCH
+# =========================
+@app.post("/search_scholarships")
+def search_scholarships(profile: dict):
+
+    IOValidator.validate_student_profile(profile)
+
+    gpa = profile["gpa"]
+    major = profile["major"]
+    year = profile["year"]
+
+    results = []
+
+    for s in DATASET:
+
+        # HARD FILTER
+        if gpa < s["minimum_gpa"]:
+            continue
+
+        if year not in s["eligible_years"]:
+            continue
+
+        if major not in s["eligible_majors"] and "All" not in s["eligible_majors"]:
+            continue
+
+        results.append(s)
+
+    memory.log_event({
+        "event": "search",
+        "input": profile,
+        "results_count": len(results)
+    })
+
+    return {"results": results}
+
+
+# =========================
+# MCP TOOL: GET TOP K
+# =========================
+@app.post("/rank_scholarships")
+def rank_scholarships(payload: dict):
+
+    scholarships = payload["scholarships"]
+
+    def score(s):
+        return (
+            s["minimum_gpa"] * -1 +
+            len(s["categories"]) +
+            len(s["tags"])
+        )
+
+    ranked = sorted(scholarships, key=score, reverse=True)
+
+    return {
+        "top_k": ranked[:10]
+    }
